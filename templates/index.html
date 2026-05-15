@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Concrete Mix Design System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+
+  <header>
+    <div class="header-inner">
+      <div class="logo">🏗️</div>
+      <div>
+        <h1>Concrete Mix Design System</h1>
+        <p class="subtitle">ACI 318 / KDS 14 20 10 Based &nbsp;|&nbsp; Random Forest ML Strength Prediction</p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="layout">
+
+      <!-- ── INPUT FORM ──────────────────────────────── -->
+      <section class="card form-card">
+        <h2>Project Conditions</h2>
+
+        <!-- Region -->
+        <div class="field">
+          <label for="region">Region</label>
+          <select id="region" onchange="onRegionChange()">
+            {% for key, r in regions.items() %}
+            <option value="{{ key }}" {% if key == 'fl_central' %}selected{% endif %}>{{ r.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Building type -->
+        <div class="field">
+          <label for="building_type">Building Type</label>
+          <select id="building_type">
+            {% for key, info in buildings.items() %}
+            <option value="{{ key }}">{{ info.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Floors -->
+        <div class="field" id="floor-field">
+          <label for="floors">Number of Floors <span class="hint">(buildings only)</span></label>
+          <input type="number" id="floors" value="5" min="1" max="150" />
+        </div>
+
+        <!-- Use Case -->
+        <div class="field">
+          <label for="use_case">Use Case / Application</label>
+          <select id="use_case" onchange="onUseCaseChange()">
+            {% for key, uc in use_cases.items() %}
+            <option value="{{ key }}">{{ uc.name }}</option>
+            {% endfor %}
+          </select>
+          <p class="use-case-hint" id="uc-hint">Offices, residential interiors, shopping malls, protected spaces</p>
+        </div>
+
+        <!-- Member -->
+        <div class="field">
+          <label for="member">Structural Member</label>
+          <select id="member">
+            {% for key, name in members.items() %}
+            <option value="{{ key }}">{{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Collapsible price editor -->
+        <button type="button" class="price-toggle" id="price-toggle-btn" onclick="togglePrices()">
+          ▶ Customize Material Prices (USD/kg)
+        </button>
+        <div id="price-inputs" hidden>
+          <div class="price-note">Prices auto-filled from selected region. Edit any value to override.</div>
+          <div class="price-row"><label>Cement</label>           <input type="number" id="price_cement"           step="0.001" min="0"> <span class="unit">$/kg</span></div>
+          <div class="price-row"><label>Blast Furnace Slag</label><input type="number" id="price_slag"             step="0.001" min="0"> <span class="unit">$/kg</span></div>
+          <div class="price-row"><label>Fly Ash</label>          <input type="number" id="price_flyash"           step="0.001" min="0"> <span class="unit">$/kg</span></div>
+          <div class="price-row"><label>Water</label>            <input type="number" id="price_water"            step="0.0001" min="0"> <span class="unit">$/kg</span></div>
+          <div class="price-row"><label>Superplasticizer</label> <input type="number" id="price_superplasticizer" step="0.01"  min="0"> <span class="unit">$/kg</span></div>
+          <div class="price-row"><label>Coarse Aggregate</label> <input type="number" id="price_coarseagg"        step="0.001" min="0"> <span class="unit">$/kg</span></div>
+          <div class="price-row"><label>Fine Aggregate</label>   <input type="number" id="price_fineagg"          step="0.001" min="0"> <span class="unit">$/kg</span></div>
+        </div>
+
+        <button id="calc-btn" onclick="calculate()">Calculate Mix Design</button>
+        <p class="form-note">* ML Model: Random Forest — UCI Concrete Dataset, Yeh (1998), R² = 0.854</p>
+      </section>
+
+      <!-- ── RESULT PANEL ────────────────────────────── -->
+      <section class="card result-card" id="result-panel">
+        <div id="placeholder">
+          <div class="placeholder-icon">📐</div>
+          <p>Select your project conditions and click Calculate.</p>
+        </div>
+
+        <div id="result-content" hidden>
+
+          <div class="result-header">
+            <div>
+              <h2 id="r-building"></h2>
+              <p class="result-meta" id="r-meta"></p>
+            </div>
+            <div class="fck-badge" id="r-fck-badge"></div>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric">
+              <span class="metric-label">Design Strength (f<sub>ck</sub>)</span>
+              <span class="metric-value" id="r-fck"></span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Water-Cement Ratio</span>
+              <span class="metric-value" id="r-wc"></span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Unit Cement</span>
+              <span class="metric-value" id="r-cement"></span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Unit Water</span>
+              <span class="metric-value" id="r-water"></span>
+            </div>
+          </div>
+
+          <table class="mix-table">
+            <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr><td>Mix Ratio (Cement : Fine Agg. : Coarse Agg.)</td><td id="r-mix"></td></tr>
+              <tr><td>Target Slump</td><td id="r-slump"></td></tr>
+              <tr><td>Recommended Cement Type</td><td id="r-cement-type"></td></tr>
+            </tbody>
+          </table>
+
+          <div id="notes-section" hidden>
+            <h3>⚠️ Special Notes</h3>
+            <ul id="r-notes"></ul>
+          </div>
+
+          <!-- ML Prediction -->
+          <div class="section-divider"></div>
+          <div class="ml-card">
+            <div class="ml-header">
+              <span class="ml-label">🤖 ML Strength Prediction <span class="ml-sub">(Random Forest, 28-day curing)</span></span>
+            </div>
+            <div id="ml-loading" class="ml-loading">Model loading… (first run may take 10–20 s)</div>
+            <div id="ml-result" hidden>
+              <div class="ml-strength-row">
+                <span class="ml-value" id="r-ml-strength"></span>
+                <span class="ml-compare" id="r-ml-compare"></span>
+              </div>
+              <div class="ml-bar-wrap">
+                <div class="ml-bar-track"><div class="ml-bar-fill" id="r-ml-bar"></div></div>
+                <span class="ml-bar-label">0</span>
+                <span class="ml-bar-label right">80 MPa</span>
+              </div>
+            </div>
+            <div id="ml-error" hidden class="ml-error-msg"></div>
+          </div>
+
+          <!-- Cost Analysis -->
+          <div class="section-divider"></div>
+          <div class="cost-card">
+            <div class="cost-header">
+              <span>💰 Cost Analysis <span class="ml-sub" id="r-region-label"></span></span>
+              <span class="cost-total" id="r-cost-total"></span>
+            </div>
+            <div id="r-cost-bars"></div>
+            <div class="cost-efficiency-row" id="r-efficiency-row" hidden>
+              <span>Cost Efficiency</span>
+              <span class="efficiency-value" id="r-efficiency"></span>
+            </div>
+          </div>
+
+          <p class="ref">Ref: ACI 318 · KDS 14 20 10 · UCI Concrete Dataset (Yeh, 1998)</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── MATERIAL GUIDE ────────────────────────────── -->
+    <section class="material-section">
+      <h2>📚 Material Guide — Role &amp; Application of Each Component</h2>
+      <div class="material-grid">
+        {% for m in materials %}
+        <div class="material-card" style="border-top: 4px solid {{ m.color }}">
+          <div class="mat-head">
+            <span class="mat-icon">{{ m.icon }}</span>
+            <div>
+              <div class="mat-name">{{ m.name }}</div>
+              <div class="mat-name-en">{{ m.name_en }}</div>
+            </div>
+            <div class="mat-price" id="mat-price-{{ m.key }}">${{ m.price_per_ton }}/ton</div>
+          </div>
+          <div class="mat-role">{{ m.role }}</div>
+          <div class="mat-row"><span class="mat-tag">Application</span> {{ m.used_in }}</div>
+          <div class="mat-row"><span class="mat-tag effect">Effect</span> {{ m.effect }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Civil Engineering · Concrete Mix Design &amp; ML Prediction Tool &nbsp;|&nbsp; ACI 318 · UCI Dataset (Yeh, 1998)</p>
+  </footer>
+
+  <script>
+    // ── Region price data (mirrors Python REGIONS dict) ──────
+    const REGION_PRICES = {
+      fl_south:  { cement:0.175, slag:0.105, flyash:0.070, water:0.001, superplasticizer:3.80, coarseagg:0.018, fineagg:0.016 },
+      fl_central:{ cement:0.155, slag:0.092, flyash:0.062, water:0.001, superplasticizer:3.60, coarseagg:0.016, fineagg:0.013 },
+      fl_tampa:  { cement:0.160, slag:0.096, flyash:0.060, water:0.001, superplasticizer:3.65, coarseagg:0.016, fineagg:0.013 },
+      fl_north:  { cement:0.148, slag:0.088, flyash:0.055, water:0.001, superplasticizer:3.40, coarseagg:0.014, fineagg:0.011 },
+      ga:        { cement:0.145, slag:0.085, flyash:0.050, water:0.001, superplasticizer:3.30, coarseagg:0.013, fineagg:0.011 },
+      tx:        { cement:0.140, slag:0.082, flyash:0.048, water:0.001, superplasticizer:3.20, coarseagg:0.012, fineagg:0.010 },
+      ne:        { cement:0.180, slag:0.108, flyash:0.070, water:0.001, superplasticizer:3.90, coarseagg:0.022, fineagg:0.019 },
+      mw:        { cement:0.150, slag:0.088, flyash:0.055, water:0.001, superplasticizer:3.45, coarseagg:0.014, fineagg:0.012 },
+      ca:        { cement:0.185, slag:0.110, flyash:0.075, water:0.002, superplasticizer:4.00, coarseagg:0.020, fineagg:0.018 },
+    };
+
+    // ── Use-case hints ───────────────────────────────────────
+    const UC_HINTS = {
+      general_indoor:  "Offices, residential interiors, shopping malls, protected spaces",
+      general_outdoor: "Exterior walls, driveways, parking lots, uncovered slabs",
+      coastal_marine:  "Seawalls, piers, coastal buildings within ~1 mile of ocean",
+      underground:     "Foundations in sulfate-rich soil, basements, retaining walls",
+      bridge_highway:  "Bridges, overpasses, highway pavements, transportation infrastructure",
+      industrial_chem: "Chemical plants, wastewater treatment, industrial floors",
+      water_retaining: "Swimming pools, water tanks, reservoirs, irrigation canals",
+      high_rise:       "Multi-story buildings requiring high pump pressure",
+    };
+
+    const PRICE_KEYS = ["cement","slag","flyash","water","superplasticizer","coarseagg","fineagg"];
+
+    const NON_BUILDING = ["bridge","retaining","pavement","dam"];
+
+    // ── Init: load Central FL prices on page load ────────────
+    window.addEventListener("DOMContentLoaded", () => {
+      fillPrices("fl_central");
+    });
+
+    document.getElementById("building_type").addEventListener("change", function () {
+      const ff = document.getElementById("floor-field");
+      const hide = NON_BUILDING.includes(this.value);
+      ff.style.opacity = hide ? "0.4" : "1";
+      ff.style.pointerEvents = hide ? "none" : "auto";
+    });
+
+    function onRegionChange() {
+      const key = document.getElementById("region").value;
+      fillPrices(key);
+    }
+
+    function fillPrices(regionKey) {
+      const prices = REGION_PRICES[regionKey];
+      if (!prices) return;
+      PRICE_KEYS.forEach(k => {
+        const inp = document.getElementById(`price_${k}`);
+        if (inp) inp.value = prices[k];
+        // Update material card badge
+        const badge = document.getElementById(`mat-price-${k}`);
+        if (badge) {
+          const perTon = (prices[k] * 1000).toFixed(0);
+          badge.textContent = `$${Number(perTon).toLocaleString()}/ton`;
+        }
+      });
+    }
+
+    function onUseCaseChange() {
+      const key = document.getElementById("use_case").value;
+      document.getElementById("uc-hint").textContent = UC_HINTS[key] || "";
+    }
+
+    function togglePrices() {
+      const inputs = document.getElementById("price-inputs");
+      const btn    = document.getElementById("price-toggle-btn");
+      inputs.hidden = !inputs.hidden;
+      btn.textContent = inputs.hidden
+        ? "▶ Customize Material Prices (USD/kg)"
+        : "▼ Customize Material Prices (USD/kg)";
+    }
+
+    // ── Helpers ──────────────────────────────────────────────
+    function fckColor(fck) {
+      if (fck <= 21) return "#16a34a";
+      if (fck <= 27) return "#2563eb";
+      if (fck <= 35) return "#d97706";
+      return "#dc2626";
+    }
+
+    function getPrices() {
+      const p = {};
+      PRICE_KEYS.forEach(k => {
+        p[k] = parseFloat(document.getElementById(`price_${k}`).value) || 0;
+      });
+      return p;
+    }
+
+    const COST_LABELS = {
+      cement:"Cement", slag:"Blast Furnace Slag", flyash:"Fly Ash",
+      water:"Water", superplasticizer:"Superplasticizer",
+      coarseagg:"Coarse Aggregate", fineagg:"Fine Aggregate",
+    };
+    const COST_COLORS = {
+      cement:"#2563eb", slag:"#7c3aed", flyash:"#64748b",
+      water:"#0ea5e9", superplasticizer:"#dc2626",
+      coarseagg:"#92400e", fineagg:"#d97706",
+    };
+
+    // ── Main calculate ───────────────────────────────────────
+    async function calculate() {
+      const btn = document.getElementById("calc-btn");
+      btn.textContent = "Calculating…";
+      btn.disabled = true;
+
+      const regionSelect = document.getElementById("region");
+      const payload = {
+        building_type: document.getElementById("building_type").value,
+        floors:        document.getElementById("floors").value,
+        use_case:      document.getElementById("use_case").value,
+        member:        document.getElementById("member").value,
+        prices:        getPrices(),
+      };
+
+      try {
+        const res = await fetch("/api/recommend", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const d = await res.json();
+        d._region_name = regionSelect.options[regionSelect.selectedIndex].text;
+        showResult(d);
+      } catch (e) {
+        alert("An error occurred. Please check the server is running.");
+      } finally {
+        btn.textContent = "Calculate Mix Design";
+        btn.disabled = false;
+      }
+    }
+
+    function showResult(d) {
+      document.getElementById("placeholder").hidden = true;
+      document.getElementById("result-content").hidden = false;
+
+      document.getElementById("r-building").textContent = d.building_name;
+      document.getElementById("r-meta").textContent =
+        `${d.member_name} · ${d.use_case_name}` + (d.floors ? ` · ${d.floors} fl.` : "");
+
+      const badge = document.getElementById("r-fck-badge");
+      badge.textContent = `C${d.fck}`;
+      badge.style.background = fckColor(d.fck);
+
+      document.getElementById("r-fck").textContent    = `${d.fck} MPa`;
+      document.getElementById("r-wc").textContent     = `${d.wc_ratio}%`;
+      document.getElementById("r-cement").textContent = `${d.cement_kg} kg/m³`;
+      document.getElementById("r-water").textContent  = `${d.water_kg} kg/m³`;
+
+      document.getElementById("r-mix").textContent         = d.mix_ratio;
+      document.getElementById("r-slump").textContent       = d.slump;
+      document.getElementById("r-cement-type").textContent = d.cement_type;
+
+      const ns = document.getElementById("notes-section");
+      const nl = document.getElementById("r-notes");
+      nl.innerHTML = "";
+      if (d.notes && d.notes.length > 0) {
+        d.notes.forEach(n => { const li = document.createElement("li"); li.textContent = n; nl.appendChild(li); });
+        ns.hidden = false;
+      } else {
+        ns.hidden = true;
+      }
+
+      showML(d);
+      showCost(d);
+    }
+
+    function showML(d) {
+      const loading = document.getElementById("ml-loading");
+      const result  = document.getElementById("ml-result");
+      const errEl   = document.getElementById("ml-error");
+
+      if (!d.ml_model_ready && !d.ml_predicted_strength) {
+        loading.hidden = false; result.hidden = true; errEl.hidden = true; return;
+      }
+      if (d.ml_error && !d.ml_predicted_strength) {
+        loading.hidden = true; result.hidden = true;
+        errEl.textContent = "⚠️ ML model failed to load: " + d.ml_error;
+        errEl.hidden = false; return;
+      }
+      loading.hidden = true; errEl.hidden = true; result.hidden = false;
+
+      const pred = d.ml_predicted_strength;
+      document.getElementById("r-ml-strength").textContent = `${pred} MPa`;
+
+      const diff = (pred - d.fck).toFixed(1);
+      const compare = document.getElementById("r-ml-compare");
+      if (pred >= d.fck) {
+        compare.textContent = `Design ${d.fck} MPa: +${diff} MPa above ✅ Safe`;
+        compare.className   = "ml-compare ok";
+      } else {
+        compare.textContent = `Design ${d.fck} MPa: ${diff} MPa below ⚠️ Review needed`;
+        compare.className   = "ml-compare warn";
+      }
+
+      const bar = document.getElementById("r-ml-bar");
+      bar.style.width      = Math.min((pred / 80) * 100, 100) + "%";
+      bar.style.background = fckColor(d.fck);
+    }
+
+    function showCost(d) {
+      const bd    = d.cost_breakdown;
+      const total = d.total_cost;
+
+      document.getElementById("r-region-label").textContent = `(${d._region_name}, 2025)`;
+      document.getElementById("r-cost-total").textContent   = `Total $${total.toFixed(2)}/m³`;
+
+      const barsEl = document.getElementById("r-cost-bars");
+      barsEl.innerHTML = "";
+      PRICE_KEYS.forEach(k => {
+        const val = bd[k];
+        if (!val || val === 0) return;
+        const pct = Math.round((val / total) * 100);
+        const row = document.createElement("div");
+        row.className = "cost-row";
+        row.innerHTML = `
+          <span class="cost-label">${COST_LABELS[k]}</span>
+          <div class="cost-bar-track">
+            <div class="cost-bar-fill" style="width:${pct}%;background:${COST_COLORS[k]}"></div>
+          </div>
+          <span class="cost-val">$${val.toFixed(2)}</span>
+          <span class="cost-pct">${pct}%</span>`;
+        barsEl.appendChild(row);
+      });
+
+      const effRow = document.getElementById("r-efficiency-row");
+      if (d.cost_efficiency) {
+        document.getElementById("r-efficiency").textContent =
+          `${d.cost_efficiency} MPa per $10 USD (ML-predicted strength)`;
+        effRow.hidden = false;
+      } else {
+        effRow.hidden = true;
+      }
+    }
+  </script>
+</body>
+</html>
