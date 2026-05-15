@@ -1,0 +1,51 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+
+# ── Model (cached so it only trains once per session) ────────
+@st.cache_resource
+def load_model():
+    url = "https://archive.ics.uci.edu/ml/machine-learning-databases/concrete/compressive/Concrete_Data.xls"
+    df = pd.read_excel(url)
+    df.columns = ["cement", "slag", "flyash", "water", "superplasticizer",
+                  "coarseagg", "fineagg", "age", "strength"]
+    X = df.drop("strength", axis=1)
+    y = df["strength"]
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    return model
+
+# ── UI ────────────────────────────────────────────────────────
+st.title("🏗️ Concrete Compressive Strength Predictor")
+st.write("Enter your concrete mix design below to predict compressive strength.")
+
+model = load_model()
+
+col1, col2 = st.columns(2)
+
+with col1:
+    cement           = st.number_input("Cement (kg/m³)",              100.0, 600.0,  300.0)
+    slag             = st.number_input("Blast Furnace Slag (kg/m³)",     0.0, 400.0,    0.0)
+    flyash           = st.number_input("Fly Ash (kg/m³)",                0.0, 200.0,    0.0)
+    water            = st.number_input("Water (kg/m³)",                100.0, 250.0,  180.0)
+
+with col2:
+    superplasticizer = st.number_input("Superplasticizer (kg/m³)",       0.0,  30.0,    6.0)
+    coarseagg        = st.number_input("Coarse Aggregate (kg/m³)",      800.0, 1200.0, 1000.0)
+    fineagg          = st.number_input("Fine Aggregate (kg/m³)",        600.0, 1000.0,  750.0)
+    age              = st.number_input("Age (days)",                        1,    365,     28)
+
+if st.button("Predict Strength"):
+    input_data = np.array([[cement, slag, flyash, water,
+                            superplasticizer, coarseagg, fineagg, age]])
+    prediction = model.predict(input_data)[0]
+
+    st.metric(label="Predicted Compressive Strength", value=f"{prediction:.1f} MPa")
+
+    if prediction >= 35:
+        st.success("High Strength Concrete ✅")
+    elif prediction >= 21:
+        st.warning("Normal Strength Concrete ⚠️")
+    else:
+        st.error("Low Strength Concrete ❌")
