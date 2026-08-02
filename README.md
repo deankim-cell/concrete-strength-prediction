@@ -1,7 +1,6 @@
 # Concrete Compressive Strength — ML Prediction & Mix Design System
 
 > Civil Engineering · Machine Learning · Flask Web Application  
-> **University of Florida** | Dean Kim | 2025
 
 ---
 
